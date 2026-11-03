@@ -12,6 +12,7 @@
   --good: #8fae9b;
   --accent-soft: rgba(194,203,213,.10);
   --danger: #ad7f7f;
+  --sales-gold: #c0a873;
   --radius: 19px;
   --shadow: 0 10px 50px rgba(0,0,0,.12);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
@@ -170,6 +171,27 @@ h3 { font-size: 14px; font-weight: 800; }
 .cal-day.partial { background:rgba(173,127,127,.16); border-color:rgba(173,127,127,.6); }
 .cal-day.empty { background:rgba(173,127,127,.08); border-color:rgba(173,127,127,.32); }
 .cal-day.current { box-shadow:inset 0 0 0 2px var(--accent); }
+.cal-day.has-sale { background:rgba(192,168,115,.16); border-color:rgba(192,168,115,.92); }
+.cal-day.current.has-sale { box-shadow:inset 0 0 0 1px var(--sales-gold); }
+.cal-sale { color:var(--sales-gold); font-size:10px; font-weight:900; line-height:1.05; align-self:center; white-space:nowrap; letter-spacing:-.045em; }
+.calendar-panel-title { flex-wrap:wrap; }
+.calendar-sales-total { color:var(--sales-gold); font-size:19px; font-weight:850; letter-spacing:-.035em; white-space:nowrap; margin-left:auto; }
+.sales-summary { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+.sales-caption { color:var(--subtle); font-size:10px; font-weight:800; letter-spacing:.07em; }
+.sales-value { font-size:28px; font-weight:850; color:var(--ink); letter-spacing:-.04em; margin-top:5px; font-variant-numeric:tabular-nums; }
+.sales-value.has-value, .sale-amount { color:var(--sales-gold); }
+.sale-form { border:1px solid var(--line); border-radius:12px; margin-top:14px; padding:14px; background:#0d1218; }
+.sale-inputs { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+.sale-inputs label { display:block; font-size:11px; font-weight:750; color:var(--muted); }
+.sale-inputs .field { display:block; margin-top:7px; }
+.sale-list { margin-top:15px; border-top:1px solid var(--line); }
+.sale-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:1px solid var(--line); padding:10px 0; }
+.sale-client { flex:1 1 130px; color:var(--ink); font-size:12px; overflow-wrap:anywhere; }
+.sale-amount { font-size:12px; font-weight:850; white-space:nowrap; }
+.sale-actions { display:flex; gap:9px; }
+.sale-actions button { border:0; background:none; color:var(--muted); font-size:11px; font-weight:700; padding:5px 2px; }
+.sale-actions button:hover { color:var(--ink); }
+.sale-actions button[data-action="sale-delete"]:hover { color:var(--danger); }
 .cal-num { font-size:12px; font-weight:800; }
 .cal-score { align-self: flex-end; font-size:10px; font-weight:800; color:var(--muted); }
 .cal-day.perfect .cal-score { color:var(--good); }
@@ -205,7 +227,7 @@ h3 { font-size: 14px; font-weight: 800; }
  .history-top { grid-template-columns:repeat(2,1fr); }
 }
 @media(max-width:580px) {
- .shell { padding: 18px 15px calc(100px + env(safe-area-inset-bottom)); }
+ .shell { padding: calc(18px + env(safe-area-inset-top, 0px)) 15px calc(100px + env(safe-area-inset-bottom, 0px)); }
  .topbar { margin-bottom: 27px; }
  .brandmark { width:37px; height:37px; border-radius:11px; }
  .brand-title { font-size:16px; }
@@ -234,6 +256,10 @@ h3 { font-size: 14px; font-weight: 800; }
  .cal-day { padding:6px; border-radius:7px; aspect-ratio:.92; }
  .cal-num { font-size:11px; }
  .cal-score { font-size:9px; }
+  .cal-sale { font-size:8px; }
+  .cal-day.has-sale { padding-left:4px; padding-right:4px; }
+  .calendar-sales-total { font-size:17px; }
+  .sale-inputs { grid-template-columns:1fr; }
  .month-switch { gap:5px; }
  .month-switch strong { font-size:12px; min-width:100px; }
  .history-top { gap:9px; }

@@ -57,7 +57,7 @@
     } catch (err) { console.error('Unable to read saved data:', err); return defaultState(); }
   }
   let state = load();
-  const ui = { tab:'today', selected:TODAY(), month:monthKey(TODAY()), reviewOpen:false };
+  const ui = { tab:'today', selected:TODAY(), month:monthKey(TODAY()), reviewOpen:false, saleFormOpen:false, saleEditId:null };
   let toastTimeout;
   function toast(message) {
     const node = $('#toast'); if (!node) return;
@@ -66,12 +66,32 @@
   }
   function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); return true; } catch (e) { toast('Storage full. Export your backup immediately.'); return false; } }
   function getDay(key) { return state.days[key] || {}; }
+  function salesForDay(key) {
+    const entries = getDay(key).sales;
+    return Array.isArray(entries) ? entries.filter(item => item && Number.isSafeInteger(item.amountPence) && item.amountPence > 0) : [];
+  }
+  function salesTotalPence(key) { return salesForDay(key).reduce((total, entry) => total + entry.amountPence, 0); }
+  function monthSalesPence(month) {
+    return Object.keys(state.days).filter(key => key.startsWith(month + '-')).reduce((total,key) => total + salesTotalPence(key),0);
+  }
+  function formatSale(pence) {
+    return new Intl.NumberFormat('en-GB', { style:'currency', currency:'GBP', minimumFractionDigits:pence % 100 === 0 ? 0 : 2, maximumFractionDigits:2 }).format(pence / 100);
+  }
+  function compactSale(pence) {
+    const pounds = pence / 100;
+    const short = (value) => new Intl.NumberFormat('en-GB', { maximumFractionDigits:1 }).format(value);
+    if (pounds >= 1e9) return `+\u00a3${short(pounds / 1e9)}b`;
+    if (pounds >= 1e6) return `+\u00a3${short(pounds / 1e6)}m`;
+    if (pounds >= 1000) return `+\u00a3${short(pounds / 1000)}k`;
+    return `+\u00a3${Math.round(pounds)}`;
+  }
   function ensureDay(key) {
     if (!state.days[key] || typeof state.days[key] !== 'object') state.days[key] = {};
     const day = state.days[key];
     if (!day.checks || typeof day.checks !== 'object') day.checks = {};
     if (!day.reasons || typeof day.reasons !== 'object') day.reasons = {};
     if (!Array.isArray(day.tasks)) day.tasks = [];
+    if (!Array.isArray(day.sales)) day.sales = [];
     if (key < state.startedOn) state.startedOn = key;
     return day;
   }
@@ -190,6 +210,15 @@
       <div class="metric-foot"><div class="chip-actions">${steps.map(([txt,increment])=>`<button class="chip" type="button" data-action="increment" data-field="${field}" data-amount="${increment}">${esc(txt)}</button>`).join('')}</div><span class="small">${esc(helper)}</span></div>
     </article>`;
   }
+  function renderSales(key) {
+    const sales = salesForDay(key), total = salesTotalPence(key);
+    const editing = sales.find(item => item.id === ui.saleEditId);
+    return `<section class="panel sales-panel"><div class="panel-title"><div><h2>Sales closed</h2><p class="caption">Full sale value, separate from your daily completion score.</p></div></div>
+      <div class="sales-summary"><div><span class="sales-caption">SALES ON THIS DAY</span><div class="sales-value ${total > 0 ? 'has-value' : ''}">${total > 0 ? '+' : ''}${formatSale(total)}</div></div><button class="btn secondary" type="button" data-action="sale-add">+ Log sale</button></div>
+      ${ui.saleFormOpen ? `<form id="sale-form" class="sale-form"><div class="sale-inputs"><label for="sale-amount">Sale value (GBP)<input id="sale-amount" class="field" type="number" required min="0.01" max="100000000" step="0.01" inputmode="decimal" placeholder="e.g. 14409.19" value="${editing ? esc((editing.amountPence / 100).toFixed(2)) : ''}"></label><label for="sale-client">Client / gym (optional)<input id="sale-client" class="field" type="text" maxlength="120" autocomplete="off" placeholder="e.g. YMCA" value="${editing ? esc(editing.client || '') : ''}"></label></div><div class="button-row"><button class="btn" type="submit">${editing ? 'Save changes' : 'Save sale'}</button><button type="button" class="btn outline" data-action="sale-cancel">Cancel</button></div></form>` : ''}
+      ${sales.length ? `<div class="sale-list">${sales.map(item => `<div class="sale-row"><span class="sale-client">${esc(item.client || 'Sale closed')}</span><strong class="sale-amount">+${formatSale(item.amountPence)}</strong><div class="sale-actions"><button type="button" data-action="sale-edit" data-id="${esc(item.id)}">Edit</button><button type="button" data-action="sale-delete" data-id="${esc(item.id)}">Delete</button></div></div>`).join('')}</div>` : '<p class="status-note">No sales closed on this day.</p>'}
+    </section>`;
+  }
   function renderToday() {
     const key=ui.selected, day=getDay(key), sc=score(key), wd=isWeekday(key);
     const isToday=key===TODAY(), holiday=key>TODAY(), weekly=weeklySummary(key), weekendMins=weekendTotal(key);
@@ -206,6 +235,7 @@
       <div class="layout"><div class="stack">
         <section class="panel hero ${day.closed?(sc.perfect?'is-complete':'is-missed'):'is-open'}" aria-label="Daily score"><div class="hero-inner"><div><div class="hero-kicker">${summaryStatus}</div><h2>${day.closed && sc.perfect ? 'Standard met.' : 'Build the day.'}</h2><div class="caption">${day.closed ? 'This day is logged. You can reopen it to correct anything.' : 'Mark everything you actually complete. Close the day to log the final result.'}</div><div class="hero-stats"><span><strong>${sc.done}/${sc.total}</strong> daily standards</span><span><strong>${streak()}</strong> day streak</span></div></div><div class="ring ${sc.perfect?'is-complete':'is-incomplete'}" style="--progress:${sc.pct}%" aria-label="${sc.pct} percent completed"><div class="ring-center"><strong>${sc.pct}%</strong><span>completed</span></div></div></div></section>
         <div><div class="section-row"><h2>Numbers that matter</h2><span>${wd?'Weekday targets':'Weekend targets'}</span></div><div class="metric-grid">${metricItems.join('')}</div><p class="status-note">${otherNotes}</p></div>
+        ${renderSales(key)}
         <section class="panel"><div class="panel-title"><div><h2>Daily non-negotiables</h2><p class="caption">The habits that need to happen every day.</p></div><span class="panel-tag">${essentialsDone(day,key)}/${ESSENTIALS.length + 1 + activeHabits(key).length}</span></div>
           <div class="checklist">${ESSENTIALS.map(([id,label])=>renderCheck(id,label,day)).join('')}${activeHabits(key).map(h=>renderCheck(h.id,h.label,day)).join('')}</div>
           <div class="split-line"></div><h3>No smoking</h3><p class="status-note">Confirm this at the end of the day. A slip is recorded honestly, not hidden.</p>
@@ -270,10 +300,10 @@
     for(let i=0;i<offset;i++) cal += '<div class="cal-day blank"></div>';
     for(let i=1;i<=daysInMonth;i++) {
       const key=month+'-'+String(i).padStart(2,'0'), isFuture=key>TODAY(), beforeStart=key<state.startedOn, current=key===TODAY(), closed=!!getDay(key).closed;
-      const value=score(key).pct;
+      const value=score(key).pct, saleTotal=salesTotalPence(key), hasSale=saleTotal>0;
       const color= isFuture||beforeStart?'future':current&&!closed?'':value===100&&closed?'perfect':value>0?'partial':'empty';
-      const summary=(isFuture||beforeStart) ? '—' : current&&!closed ? 'LIVE' : `${value}%${!closed?'*':''}`;
-      cal+=`<button type="button" class="cal-day ${color} ${current?'current':''}" data-action="select-day" data-value="${key}" ${isFuture||beforeStart?'disabled':''} aria-label="${esc(formatDate(key))}, ${esc(summary)}"><span class="cal-num">${i}</span><span class="cal-score">${summary}</span></button>`;
+      const summary=(isFuture||beforeStart) ? '—' : hasSale ? `${value}%${!closed?'*':''}` : current&&!closed ? 'LIVE' : `${value}%${!closed?'*':''}`;
+      cal+=`<button type="button" class="cal-day ${color} ${hasSale?'has-sale':''} ${current?'current':''}" data-action="select-day" data-value="${key}" ${isFuture||beforeStart?'disabled':''} aria-label="${esc(formatDate(key))}, ${esc(summary)}${hasSale?', sales closed '+esc(formatSale(saleTotal)):''}"><span class="cal-num">${i}</span>${hasSale?`<span class="cal-sale">${compactSale(saleTotal)}</span>`:''}<span class="cal-score">${summary}</span></button>`;
     }
     cal+='</div>';
     let weeklyCards='';
@@ -288,7 +318,7 @@
     }
     return `<div class="pagehead"><div><div class="eyebrow">Track the evidence</div><h1>Monthly review</h1><div class="date-muted">Unlogged past days count as incomplete. Today counts after it is closed.</div></div><div class="month-switch"><button type="button" class="icon-btn" data-action="month-shift" data-offset="-1" aria-label="Previous month">‹</button><strong>${esc(monthTitle(month))}</strong><button type="button" class="icon-btn" data-action="month-shift" data-offset="1" ${month>=currentMonth?'disabled':''} aria-label="Next month">›</button></div></div>
       <div class="history-top"><div class="stat"><span class="panel-tag">100% DAYS</span><div class="value">${perfect}<em> / ${monthDates.length}</em></div><p class="caption">Every applicable target met</p></div><div class="stat"><span class="panel-tag">AVG COMPLETION</span><div class="value">${average}%</div><p class="caption">Across tracked days</p></div><div class="stat"><span class="panel-tag">LOGGED DAYS</span><div class="value">${logged}<em> / ${monthDates.length}</em></div><p class="caption">Closed at end of day</p></div><div class="stat"><span class="panel-tag">CURRENT STREAK</span><div class="value">${streak()}</div><p class="caption">Consecutive 100% days</p></div></div>
-      <div class="history-grid"><section class="panel"><div class="panel-title"><div><h2>Completion calendar</h2><p class="caption">Tap any recorded day to inspect or edit it.</p></div></div>${cal}<div class="legend"><span><i></i>100%</span><span class="partial"><i></i>Partly done</span><span class="empty"><i></i>0% / unlogged</span></div></section>
+      <div class="history-grid"><section class="panel"><div class="panel-title calendar-panel-title"><div><h2>Completion calendar</h2><p class="caption">Tap any recorded day to inspect or edit it.</p></div>${monthSalesPence(month)>0?`<strong class="calendar-sales-total" title="Sales closed this month">+${formatSale(monthSalesPence(month))}</strong>`:''}</div>${cal}<div class="legend"><span><i></i>100%</span><span class="partial"><i></i>Partly done</span><span class="empty"><i></i>0% / unlogged</span></div></section>
       <div class="stack"><section class="panel"><div class="panel-title"><div><h2>Target consistency</h2><p class="caption">How often each standard was met.</p></div></div><div class="compliance">${counts.map(([name,id,days])=>{const hit=days.filter(key=>id==='morning-all'?MORNING.every(([i])=>checkValue(getDay(key),i)):goalsFor(key).find(g=>g.id===id)?.ok).length; return `<div><div class="compliance-top"><span class="compliance-label">${name}</span><strong>${hit}/${days.length}${days.length?' · '+percent(hit,days.length)+'%':''}</strong></div>${progress(hit,days.length)}</div>`;}).join('')}</div></section>
       <section class="panel"><div class="panel-title"><div><h2>Weekly targets</h2><p class="caption">Workout frequency and the 16-hour weekend block.</p></div></div><div class="week-summary">${weeklyCards}</div></section></div></div>`;
   }
@@ -318,10 +348,19 @@
     const b=e.target.closest('[data-action]'); if (!b || b.disabled) return;
     const a=b.dataset.action, id=b.dataset.id;
     if (a==='tab') { ui.tab=b.dataset.value; ui.reviewOpen=false; render(); window.scrollTo(0,0); return; }
-    if (a==='day-shift') { ui.selected=shiftDate(ui.selected,num(b.dataset.offset)); ui.reviewOpen=false; render(); return; }
+    if (a==='day-shift') { ui.selected=shiftDate(ui.selected,num(b.dataset.offset)); ui.reviewOpen=false; ui.saleFormOpen=false; ui.saleEditId=null; render(); return; }
     if (a==='jump-today') { ui.selected=TODAY(); ui.reviewOpen=false; render(); return; }
     if (a==='month-shift') { ui.month=moveMonth(ui.month,num(b.dataset.offset)); render(); return; }
-    if (a==='select-day') { ui.selected=b.dataset.value; ui.tab='today'; ui.reviewOpen=false; render(); window.scrollTo(0,0); return; }
+    if (a==='select-day') { ui.selected=b.dataset.value; ui.tab='today'; ui.reviewOpen=false; ui.saleFormOpen=false; ui.saleEditId=null; render(); window.scrollTo(0,0); return; }
+    if (a==='sale-add') { ui.saleFormOpen=true; ui.saleEditId=null; render(); return; }
+    if (a==='sale-edit') { ui.saleFormOpen=true; ui.saleEditId=id; render(); return; }
+    if (a==='sale-cancel') { ui.saleFormOpen=false; ui.saleEditId=null; render(); return; }
+    if (a==='sale-delete') {
+      if (!confirm('Delete this recorded sale?')) return;
+      ui.saleFormOpen=false; ui.saleEditId=null;
+      modify(d => { d.sales=d.sales.filter(item => item.id !== id); }, false);
+      toast('Sale deleted.'); return;
+    }
     if (a==='check') { modify(d=>{d.checks[id]=!d.checks[id];}); return; }
     if (a==='increment') { const field=b.dataset.field, delta=num(b.dataset.amount); modify(d=>{d[field]=clamp(num(d[field])+delta,0,field==='weekendMinutes'?1440:100000);}); return; }
     if (a==='smoking') { modify(d=>{d.smoked=b.dataset.value==='yes';}); return; }
@@ -379,6 +418,22 @@
     }
   });
   document.addEventListener('submit', e => {
+    if (e.target.id==='sale-form') {
+      e.preventDefault();
+      const raw=e.target.querySelector('#sale-amount').value.trim();
+      const amount=Number(raw), pence=Math.round(amount * 100);
+      if (!/^\d+(\.\d{1,2})?$/.test(raw) || !Number.isFinite(amount) || pence < 1 || pence > 10000000000) {
+        toast('Enter a positive sale value in pounds (up to 2 decimal places).'); return;
+      }
+      const client=e.target.querySelector('#sale-client').value.trim().slice(0,120), editId=ui.saleEditId;
+      ui.saleFormOpen=false; ui.saleEditId=null;
+      modify(d => {
+        const old=d.sales.find(item => item.id === editId);
+        if (old) { old.amountPence=pence; old.client=client; }
+        else d.sales.push({ id:newId(), amountPence:pence, client });
+      }, false);
+      toast(editId ? 'Sale updated and saved.' : 'Sale closed and saved.'); return;
+    }
     if (e.target.id==='task-form') {
       e.preventDefault();const input=e.target.querySelector('input'),value=input.value.trim();if(!value)return;
       modify(d=>{d.tasks.push({id:newId(),text:value.slice(0,120),done:false});},false);return;
@@ -394,11 +449,11 @@
     const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
   }
   function exportCSV() {
-    const cols=['Date','Closed','Score %','Calories','Sales calls','After-hours minutes','Weekend work minutes','Training','Session','Smoked','Read','Vitamins','Emails','Morning steps done','Missed reasons'];
+    const cols=['Date','Closed','Score %','Calories','Sales calls','After-hours minutes','Weekend work minutes','Training','Session','Smoked','Read','Vitamins','Emails','Morning steps done','Missed reasons','Sales closed (GBP)','Sales count','Sales clients'];
     const rows=[cols];
     for(let key=state.startedOn;key<=TODAY();key=shiftDate(key,1)) {
       const d=getDay(key),s=score(key);
-      rows.push([key,d.closed?'Yes':'No',s.pct,num(d.calories),num(d.calls),num(d.afterHoursMinutes),num(d.weekendMinutes),d.training||'',d.split||'',typeof d.smoked==='boolean'?(d.smoked?'Yes':'No'):'',checkValue(d,'read')?'Yes':'No',checkValue(d,'vitamins')?'Yes':'No',checkValue(d,'emails')?'Yes':'No',MORNING.filter(([id])=>checkValue(d,id)).length,s.goals.filter(g=>!g.ok&&d.reasons?.[g.id]?.category).map(g=>`${g.label}: ${d.reasons[g.id].category}${d.reasons[g.id].note?' ('+d.reasons[g.id].note+')':''}`).join('; ')]);
+      rows.push([key,d.closed?'Yes':'No',s.pct,num(d.calories),num(d.calls),num(d.afterHoursMinutes),num(d.weekendMinutes),d.training||'',d.split||'',typeof d.smoked==='boolean'?(d.smoked?'Yes':'No'):'',checkValue(d,'read')?'Yes':'No',checkValue(d,'vitamins')?'Yes':'No',checkValue(d,'emails')?'Yes':'No',MORNING.filter(([id])=>checkValue(d,id)).length,s.goals.filter(g=>!g.ok&&d.reasons?.[g.id]?.category).map(g=>`${g.label}: ${d.reasons[g.id].category}${d.reasons[g.id].note?' ('+d.reasons[g.id].note+')':''}`).join('; '), (salesTotalPence(key)/100).toFixed(2), salesForDay(key).length, salesForDay(key).map(x => x.client || 'Sale closed').join('; ')]);
     }
     const csv=rows.map(row=>row.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
     download('\ufeff'+csv,'text/csv;charset=utf-8',`daily-standard-history-${TODAY()}.csv`);
